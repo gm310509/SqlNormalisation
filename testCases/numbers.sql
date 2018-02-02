@@ -1,0 +1,1 @@
+select 1, -2, +3, 3.14, -19.12, +16.8e-4, -.8, 1e07, '1234c'xi4, '324ff' xi4, 'hello', 'ff'xi2, 'there' as there

@@ -1,0 +1,154 @@
+/*
+ * Copyright Teradata Corporation 2016
+ * This code is properietary and confidential and may not be used
+ * for any purpose other than the one defined in the license agreement.
+ * 
+ */
+
+/*
+ * Javacc grammar for Host variables. This grammar is a basic parser to
+ * identify host variables (e.g. :X) found in an SQL query. single line comments
+ * and multiling comments are ignored.
+ * This grammar will modify the supplied SQL in such a way that discovered
+ * variables are replaced with ? operators. All other text is unmodified.
+ * The grammar adds each discovered host variable into a variable list.
+ *
+ * Author: gm310509
+ */
+/*
+ * Copyright © 2002 Sun Microsystems, Inc., 4150 Network Circle, Santa Clara,
+ * California 95054, U.S.A. All rights reserved.  Sun Microsystems, Inc. has
+ * intellectual property rights relating to technology embodied in the product
+ * that is described in this document. In particular, and without limitation,
+ * these intellectual property rights may include one or more of the U.S.
+ * patents listed at http://www.sun.com/patents and one or more additional
+ * patents or pending patent applications in the U.S. and in other countries.
+ * U.S. Government Rights - Commercial software. Government users are subject
+ * to the Sun Microsystems, Inc. standard license agreement and applicable
+ * provisions of the FAR and its supplements.  Use is subject to license terms.
+ * Sun,  Sun Microsystems,  the Sun logo and  Java are trademarks or registered
+ * trademarks of Sun Microsystems, Inc. in the U.S. and other countries.  This
+ * product is covered and controlled by U.S. Export Control laws and may be
+ * subject to the export or import laws in other countries.  Nuclear, missile,
+ * chemical biological weapons or nuclear maritime end uses or end users,
+ * whether direct or indirect, are strictly prohibited.  Export or reexport
+ * to countries subject to U.S. embargo or to entities identified on U.S.
+ * export exclusion lists, including, but not limited to, the denied persons
+ * and specially designated nationals lists is strictly prohibited.
+ */
+
+/*
+options {
+  LOOKAHEAD = 1;
+  CHOICE_AMBIGUITY_CHECK = 2;
+  OTHER_AMBIGUITY_CHECK = 1;
+  STATIC = true;
+  DEBUG_PARSER = false;
+  DEBUG_LOOKAHEAD = false;
+  DEBUG_TOKEN_MANAGER = false;
+  ERROR_REPORTING = true;
+  JAVA_UNICODE_ESCAPE = false;
+  UNICODE_INPUT = false;
+  IGNORE_CASE = false;
+  USER_TOKEN_MANAGER = false;
+  USER_CHAR_STREAM = false;
+  BUILD_PARSER = true;
+  BUILD_TOKEN_MANAGER = true;
+  SANITY_CHECK = true;
+  FORCE_LA_CHECK = false;
+}
+*/
+
+
+options {
+  IGNORE_CASE = true;
+  DEBUG_PARSER = false;
+  STATIC = false;
+}
+
+PARSER_BEGIN(CommentAndLiteralParser)
+
+package com.teradata.edwdecoded.sql.normalise.commentandliteralgrammar;
+
+import com.teradata.edwdecoded.sql.normalise.Debug;
+
+public class CommentAndLiteralParser {
+
+}
+
+PARSER_END(CommentAndLiteralParser)
+
+
+
+/* Don't skip whitespace. We need to capture the whitespace
+ * so that it can be included in the generated query.
+ */
+/*
+SKIP : { " " | "\t" }
+SKIP : { < "\n" | "\r" | "\r\n" > }
+*/
+
+TOKEN : { < OTHER_TEXT : ( ~ [  "'", "\"", "-", "/" ] ) + > }
+/* It would be nice to try to deal with Integers, however, the "OTHER_TEXT" consumes them because it doesn't exclude numbers from its inventory of character matches.
+ * Excluding numbers from Other_TEXT is fine, except that creates problems with identifiers (e.g. id1)
+ * To tease out standalone numeric literals might require a more sophisticated parser.
+ *
+ * Therefore, integers and decimals might be better dealt with outside of this parser with simple regulare expressions.
+ */
+
+TOKEN : { < STRING_LITERAL : ("'" ( ~ ["'"] ) * "'")
+                            | ("\"" ( ~ ["\""] ) * "\"") > }
+
+
+/* Comment handling */
+/* Multi-line comments */
+// Open comment while in DEFAULT state.
+// TOKEN : { < MULTI_LINE_COMMENT: "/*" (~[]) * "*/" > }
+
+TOKEN : { < MULTI_LINE_COMMENT: "/*" > : ML_COMMENT_STATE }
+
+<ML_COMMENT_STATE> SKIP : {
+    < "*/" > : DEFAULT
+  | < ~[] >
+}
+
+/* Identify a slash that is not part of a comment. */
+TOKEN : { < SLASH: "/" ~[ "*" ]> }
+/* Identify a minus that is not part of a single line comment. */
+TOKEN : { < UNARY_MINUS: "-" ~[ "-" ]> }
+
+
+/* Single Line comments */
+TOKEN :
+{
+  <SINGLE_LINE_COMMENT: "--" (~["\n", "\r"])* ("\n" | "\r" | "\r\n")?>
+}
+
+
+String normaliseSql(StringBuilder sql) : {
+} {
+    (
+       (
+            <STRING_LITERAL>        { Debug.println("Text String: " + token.image);
+                                      //sql.append(token.image);
+                                      sql.append("*S*");
+                                    }
+          | <MULTI_LINE_COMMENT>    { Debug.println("ML Comment:  " + token.image + " Removed.");
+                                      //sql.append(token.image);
+                                    }
+          | <SLASH>                 { Debug.println("Unary Slash: " + token.image);
+                                      sql.append(token.image);
+                                    }
+          | <UNARY_MINUS>           { Debug.println("Unary Minus: " + token.image);
+                                      sql.append(token.image);
+                                    }
+          | <SINGLE_LINE_COMMENT>   { Debug.println("SL Comment:  " + token.image);
+                                      // sql.append(token.image);
+                                    }
+          | <OTHER_TEXT>            { Debug.println("Other Text:  " + token.image);
+                                      sql.append(token.image);
+                                    }
+       )
+    ) *
+    <EOF> { return "done."; }
+}
